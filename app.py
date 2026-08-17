@@ -244,7 +244,7 @@ with st.form("prediction_form"):
             lot_sqft = st.number_input("Lot size (sq ft)", min_value=1,
                                        value=6534, step=100, key="lot_sqft")
             lot_size_acres = lot_sqft / 43560.0  # 43,560 sq ft = 1 acre
-            st.caption(f"≈ {lot_size_acres:.g} acres")
+            st.caption(f"≈ {lot_size_acres:g} acres")
 
         bedrooms = st.number_input("Bedrooms", min_value=0, value=3, step=1)
         bathrooms = st.number_input("Bathrooms", min_value=0, value=2, step=1)
