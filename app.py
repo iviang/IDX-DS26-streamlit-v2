@@ -212,7 +212,7 @@ def build_feature_row(
     }
 
 
-st.title("🏠 California Home Price Predictor")
+st.title("🏠 California Home Price Predictor v2")
 st.caption(
     "Enter a property address and its characteristics to estimate the home's "
     "closing price. Coordinates and neighborhood are looked up automatically."
