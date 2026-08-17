@@ -237,7 +237,7 @@ with st.form("prediction_form"):
         living_area = st.number_input("Living area (sqft)", min_value=1.0, value=1800.0, step=50.0)
         lot_unit = st.radio("Lot size unit", ["Acres", "Square feet"], horizontal=True)
         if lot_unit == "Acres":
-            lot_size_acres = st.number_input("Lot size (acres)", min_value=0.0001,
+            lot_size_acres = st.number_input("Lot size (acres)", min_value=0.01,
                                              value=0.15, step=0.01, format="%.4f",
                                              key="lot_acres")
         else:
@@ -245,7 +245,7 @@ with st.form("prediction_form"):
                                        value=6534.0, step=100.0, key="lot_sqft")
             lot_size_acres = lot_sqft / 43560.0  # 43,560 sq ft = 1 acre
             st.caption(f"≈ {lot_size_acres:.4f} acres")
-            
+
         bedrooms = st.number_input("Bedrooms", min_value=0, value=3, step=1)
         bathrooms = st.number_input("Bathrooms", min_value=0, value=2, step=1)
 
