@@ -8,4 +8,4 @@ This is the version 2 of the streamlit task of the CA-Price-Prediction DS26 proj
   - Address input box
   - LotSize unit option (acres/sqft)
   - Formatting updates
-V2 Deployment visible at: <[idx-ds26-app-ca-price-pred-v1.streamlit.app](https://idx-ds26-app-v1-te6gzwnikmxfecpdczdq3u.streamlit.app/)>
+V2 Deployment visible at: <https://idx-ds26-app-ca-price-pred-v2.streamlit.app/>
