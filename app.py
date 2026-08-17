@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+# --- V2: address geocoding---
+from geopy.geocoders import GoogleV3, Nominatim
+from geopy.extra.rate_limiter import RateLimiter
 
 st.set_page_config(
     page_title="California Home Price Predictor",
@@ -66,6 +69,51 @@ def normalize_zip(value: str) -> str:
     digits = "".join(ch for ch in str(value) if ch.isdigit())
     return digits.zfill(5) if digits else ""
 
+# V2: geocoding
+@st.cache_resource
+def get_geocoder():
+    """Use Google Maps if a key is in Streamlit secrets, else free OpenStreetMap."""
+    try:
+        key = st.secrets["google_maps_api_key"]
+    except Exception:
+        key = None
+ 
+    if key:
+        locator = GoogleV3(api_key=key, timeout=10)
+        return RateLimiter(locator.geocode, min_delay_seconds=0.2), "google"
+ 
+    locator = Nominatim(user_agent="ca-house-price-predictor", timeout=10)
+    return (
+        RateLimiter(
+            lambda q: locator.geocode(q, addressdetails=True, country_codes="us"),
+            min_delay_seconds=1.0,
+        ),
+        "nominatim",
+    )
+ 
+ 
+def parse_components(location, backend):
+    """Pull ZIP / City / County (display form) out of a geopy result."""
+    zip_code = city = county = None
+    if backend == "google":
+        for comp in location.raw.get("address_components", []):
+            types = comp.get("types", [])
+            if "postal_code" in types:
+                zip_code = comp["long_name"]
+            elif "locality" in types:
+                city = comp["long_name"]
+            elif "administrative_area_level_2" in types:
+                county = comp["long_name"]
+    else:  # nominatim
+        addr = location.raw.get("address", {})
+        zip_code = addr.get("postcode")
+        city = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("hamlet")
+        county = addr.get("county")
+ 
+    if county:
+        county = county.replace(" County", "").strip()
+    return zip_code, city, county
+ 
 
 def build_feature_row(
     living_area,
@@ -166,97 +214,37 @@ def build_feature_row(
 
 st.title("🏠 California Home Price Predictor")
 st.caption(
-    "Enter property characteristics below to estimate the home's closing price "
-    "using the trained regression model."
+    "Enter a property address and its characteristics to estimate the home's "
+    "closing price. Coordinates and neighborhood are looked up automatically."
 )
 
+geocode, backend = get_geocoder()
+if backend == "nominatim":
+    st.info("Using the free OpenStreetMap geocoder. Add a `google_maps_api_key` in "
+            "the app's Streamlit **Secrets** to switch to Google Maps automatically.")
+    
 with st.form("prediction_form"):
+    address = st.text_input(
+        "📍 Property address",
+        value=" "
+    )
+
     st.subheader("Property details")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
-        living_area = st.number_input(
-            "Living area (sq ft)",
-            min_value=1.0,
-            value=1800.0,
-            step=50.0,
-        )
-        lot_size_acres = st.number_input(
-            "Lot size (acres)",
-            min_value=0.0001,
-            value=0.15,
-            step=0.01,
-            format="%.4f",
-        )
-        bedrooms = st.number_input(
-            "Bedrooms",
-            min_value=0,
-            value=3,
-            step=1,
-        )
-        bathrooms = st.number_input(
-            "Bathrooms",
-            min_value=0,
-            value=2,
-            step=1,
-        )
-        year_built = st.number_input(
-            "Year built",
-            min_value=1800,
-            max_value=2100,
-            value=1990,
-            step=1,
-        )
+        living_area = st.number_input("Living area (sq ft)", min_value=1.0, value=1800.0, step=50.0)
+        lot_size_acres = st.number_input("Lot size (acres)", min_value=0.0001, value=0.15,
+                                         step=0.01, format="%.4f")
+        bedrooms = st.number_input("Bedrooms", min_value=0, value=3, step=1)
+        bathrooms = st.number_input("Bathrooms", min_value=0, value=2, step=1)
 
     with col2:
-        stories = st.number_input(
-            "Stories",
-            min_value=0,
-            value=1,
-            step=1,
-        )
-        garage_spaces = st.number_input(
-            "Garage spaces",
-            min_value=0,
-            value=2,
-            step=1,
-        )
-        parking_total = st.number_input(
-            "Total parking spaces",
-            min_value=0,
-            value=2,
-            step=1,
-        )
-        latitude = st.number_input(
-            "Latitude",
-            value=34.0522,
-            format="%.6f",
-        )
-        longitude = st.number_input(
-            "Longitude",
-            value=-118.2437,
-            format="%.6f",
-        )
-
-    with col3:
-        county = st.selectbox(
-            "County",
-            county_options,
-            index=county_options.index("Los Angeles"),
-        )
-        postal_code = st.text_input(
-            "ZIP code",
-            value="90001",
-            max_chars=10,
-        )
-        city = st.selectbox(
-            "City",
-            city_options,
-            index=city_options.index("Los Angeles")
-            if "Los Angeles" in city_options
-            else 0,
-        )
+        year_built = st.number_input("Year built", min_value=1800, max_value=2100, value=1990, step=1)
+        stories = st.number_input("Stories", min_value=0, value=1, step=1)
+        garage_spaces = st.number_input("Garage spaces", min_value=0, value=2, step=1)
+        parking_total = st.number_input("Total parking spaces", min_value=0, value=2, step=1)
 
     st.subheader("Property features")
     b1, b2, b3 = st.columns(3)
@@ -282,51 +270,58 @@ with st.form("prediction_form"):
 
 if submitted:
     try:
-        if lot_size_acres <= 0:
+        if not address.strip():
+            st.error("Please enter a property address.")
+        elif lot_size_acres <= 0:
             st.error("Lot size must be greater than 0 acres.")
         elif living_area <= 0:
             st.error("Living area must be greater than 0 square feet.")
         else:
-            X, location_debug = build_feature_row(
-                living_area=living_area,
-                lot_size_acres=lot_size_acres,
-                bedrooms=bedrooms,
-                bathrooms=bathrooms,
-                year_built=year_built,
-                stories=stories,
-                garage_spaces=garage_spaces,
-                parking_total=parking_total,
-                latitude=latitude,
-                longitude=longitude,
-                county=county,
-                postal_code=postal_code,
-                city=city,
-                view_yn=view_yn,
-                basement_yn=basement_yn,
-                pool_private_yn=pool_private_yn,
-                attached_garage_yn=attached_garage_yn,
-                fireplace_yn=fireplace_yn,
-                new_construction_yn=new_construction_yn,
-            )
-
-            log_prediction = float(model.predict(X)[0])
-            predicted_price = float(np.exp(log_prediction))
-
-            st.success("Prediction complete")
-            st.metric(
-                "Estimated closing price",
-                f"${predicted_price:,.0f}",
-            )
-
-            with st.expander("Prediction details"):
-                st.write(f"Model class: `{type(model).__name__}`")
-                st.write(f"Features supplied to model: `{X.shape[1]}`")
-                st.write(f"Predicted log price: `{log_prediction:.6f}`")
-                st.write(f"Normalized ZIP: `{location_debug['zip_code']}`")
-                st.write(
-                    "Resolved district: "
-                    f"`{location_debug['district'] or 'Not found'}`"
+            location = geocode(address)
+            if location is None:
+                st.error("Could not find that address. Try adding city, state, and ZIP.")
+            else:
+                zip_code, city, county = parse_components(location, backend)
+ 
+                X, location_debug = build_feature_row(
+                    living_area=living_area,
+                    lot_size_acres=lot_size_acres,
+                    bedrooms=bedrooms,
+                    bathrooms=bathrooms,
+                    year_built=year_built,
+                    stories=stories,
+                    garage_spaces=garage_spaces,
+                    parking_total=parking_total,
+                    latitude=location.latitude,
+                    longitude=location.longitude,
+                    county=county,
+                    postal_code=zip_code or "",
+                    city=city,
+                    view_yn=view_yn,
+                    basement_yn=basement_yn,
+                    pool_private_yn=pool_private_yn,
+                    attached_garage_yn=attached_garage_yn,
+                    fireplace_yn=fireplace_yn,
+                    new_construction_yn=new_construction_yn,
                 )
+ 
+                log_prediction = float(model.predict(X)[0])
+                predicted_price = float(np.exp(log_prediction))
+ 
+                st.success("Prediction complete")
+                st.metric("Estimated closing price", f"${predicted_price:,.0f}")
+ 
+                m1, m2 = st.columns(2)
+                m1.metric("Latitude", f"{location.latitude:.5f}")
+                m2.metric("Longitude", f"{location.longitude:.5f}")
+ 
+                with st.expander("Prediction details"):
+                    st.write(f"Model class: `{type(model).__name__}`")
+                    st.write(f"Features supplied to model: `{X.shape[1]}`")
+                    st.write(f"Predicted log price: `{log_prediction:.6f}`")
+                    st.write(f"Geocoded ZIP: `{location_debug['zip_code']}`  "
+                             f"(county: `{county or 'not found'}`)")
+                    st.write(f"Resolved district: `{location_debug['district'] or 'Not found'}`")
 
     except Exception as exc:
         st.error(f"Prediction failed: {exc}")
@@ -339,5 +334,5 @@ with st.sidebar:
         "The saved model bundle is loaded with joblib."
     )
     st.write(
-        "Required Python packages: streamlit, joblib, numpy, pandas, lightgbm."
+        "Required Python packages: streamlit, joblib, numpy, pandas, lightgbm, scikit-learn, geopy."
     )
