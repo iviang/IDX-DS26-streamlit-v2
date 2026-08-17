@@ -238,7 +238,7 @@ with st.form("prediction_form"):
         lot_unit = st.radio("Lot size unit", ["Acres", "Square feet"], horizontal=True)
         if lot_unit == "Acres":
             lot_size_acres = st.number_input("Lot size (acres)", min_value=0.0001,
-                                             value=0.15, step=0.01, format="%.g",
+                                             value=0.15, step=0.01, format="%g",
                                              key="lot_acres")
         else:
             lot_sqft = st.number_input("Lot size (sq ft)", min_value=1,
