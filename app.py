@@ -72,7 +72,7 @@ def normalize_zip(value: str) -> str:
 # V2: geocoding
 @st.cache_resource
 def get_geocoder():
-    """Use Google Maps if a key is in Streamlit secrets, else free OpenStreetMap."""
+    """Use Google Maps if a key is in Streamlit secrets."""
     try:
         key = st.secrets["google_maps_api_key"]
     except Exception:
@@ -226,7 +226,7 @@ if backend == "nominatim":
 with st.form("prediction_form"):
     address = st.text_input(
         "📍 Property address",
-        value=" "
+        value="6175 Oneida Drive, San Jose, CA 95123"
     )
 
     st.subheader("Property details")
